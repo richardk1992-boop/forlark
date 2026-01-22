@@ -159,10 +159,15 @@ async function setManualToken() {
     }
 
     // 存储 token
+    const expiresAt = Date.now() + 7200 * 1000; // 2小时后过期
+    console.log('[手动设置 Token] 当前时间:', new Date().toISOString());
+    console.log('[手动设置 Token] 过期时间戳:', expiresAt);
+    console.log('[手动设置 Token] 过期时间:', new Date(expiresAt).toISOString());
+
     await chrome.storage.local.set({
       userToken: {
         accessToken: token,
-        expiresAt: Date.now() + 7200 * 1000,
+        expiresAt: expiresAt,
         region: region,
         tokenType: 'user',
         user: data.data ? {
@@ -174,7 +179,7 @@ async function setManualToken() {
     });
 
     document.getElementById('manualToken').value = '';
-    checkAuthStatus();
+    await checkAuthStatus();
     showStatus('✅ Token 设置成功', 'success');
   } catch (error) {
     showError('设置失败: ' + error.message);
@@ -182,9 +187,16 @@ async function setManualToken() {
 }
 
 async function clearToken() {
-  await chrome.storage.local.remove(['userToken']);
-  checkAuthStatus();
-  showStatus('Token 已清除', 'success');
+  await chrome.storage.local.remove(['userToken', 'oauthState', 'oauthRegion', 'larkOAuthCode']);
+  await checkAuthStatus();
+
+  // 验证是否清除成功
+  const tokenInfo = await chrome.storage.local.get(['userToken']);
+  if (!tokenInfo.userToken) {
+    showStatus('✅ Token 已清除', 'success');
+  } else {
+    showStatus('⚠️ 清除可能未成功，请重试', 'error');
+  }
 }
 
 // ===== 获取文档 =====
@@ -213,32 +225,60 @@ async function fetchDocumentContent() {
         const path = window.location.pathname;
 
         // 方法1: 从 URL 路径提取
-        // 支持: /docx/xxxxx, /docs/xxxxx, /wiki/xxxxx, /note/xxxxx
         const pathMatch = path.match(/\/(docx|docs|wiki|note|slides|sheets|bitable)\/([a-zA-Z0-9_-]+)/);
-        if (pathMatch) return pathMatch[2];
+        if (pathMatch) {
+          return {
+            documentId: pathMatch[2],
+            method: 'URL路径匹配',
+            matchedPattern: pathMatch[0]
+          };
+        }
 
         // 方法2: 从 window 对象
-        if (window.__doc_id__) return window.__doc_id__;
+        if (window.__doc_id__) {
+          return {
+            documentId: window.__doc_id__,
+            method: 'window.__doc_id__'
+          };
+        }
 
         // 方法3: 从 data 属性
         const docElement = document.querySelector('[data-doc-id]');
-        if (docElement) return docElement.getAttribute('data-doc-id');
+        if (docElement) {
+          return {
+            documentId: docElement.getAttribute('data-doc-id'),
+            method: 'data-doc-id 属性'
+          };
+        }
 
         // 方法4: 从 meta 标签
         const metaTag = document.querySelector('meta[name="doc-id"]');
-        if (metaTag) return metaTag.getAttribute('content');
+        if (metaTag) {
+          return {
+            documentId: metaTag.getAttribute('content'),
+            method: 'meta 标签'
+          };
+        }
 
-        return null;
+        return {
+          documentId: null,
+          method: '无匹配',
+          url: url,
+          path: path
+        };
       }
     });
 
-    const documentId = results[0]?.result;
+    const extractResult = results[0]?.result;
+    console.log('[调试] 文档ID提取结果:', extractResult);
+
+    const documentId = extractResult?.documentId;
     if (!documentId) {
-      // 显示当前URL信息帮助调试
       const urlObj = new URL(tab.url);
       let errorMsg = `无法获取文档 ID\n\n`;
       errorMsg += `当前页面: ${tab.url}\n`;
-      errorMsg += `路径: ${urlObj.pathname}\n\n`;
+      errorMsg += `路径: ${urlObj.pathname}\n`;
+      errorMsg += `提取结果: ${JSON.stringify(extractResult)}\n\n`;
       errorMsg += `支持的页面类型:\n`;
       errorMsg += `• /docx/xxxxx - 文档\n`;
       errorMsg += `• /docs/xxxxx - 文档\n`;
@@ -250,6 +290,10 @@ async function fetchDocumentContent() {
       errorMsg += `请打开正确的飞书文档页面后重试`;
       throw new Error(errorMsg);
     }
+
+    console.log('[调试] 提取的文档ID:', documentId);
+    console.log('[调试] 提取方法:', extractResult.method);
+    console.log('[调试] 当前页面URL:', tab.url);
 
     // 获取配置
     const config = await chrome.storage.local.get(['appId', 'appSecret']);
@@ -361,17 +405,21 @@ async function testApi() {
       result += `\n✅ 成功！文档标题: ${metaData.data.document.title}\n`;
       result += `\n应用可以访问此文档，点击"获取文档内容"开始读取。`;
     } else {
-      result += `\n❌ 失败\n\n`;
+      result += `\n❌ 失败 (code: ${metaData.code})\n\n`;
       if (metaData.code === 1770032) {
         result += `错误代码 1770032 = 权限不足\n\n`;
-        result += `解决方法:\n`;
-        result += `1. 访问 ${apiEndpoint}\n`;
-        result += `2. 进入应用 → 权限管理\n`;
-        result += `3. 添加权限: docs:document.content:read\n`;
-        result += `4. 发布管理 → 启用测试版本\n`;
-        result += `5. 添加自己为测试用户\n\n`;
-        result += `启用测试版本后立即生效，无需等待审批！`;
+        result += `🔧 解决方法 - 为应用添加文档权限：\n`;
+        result += `1. 打开当前文档页面\n`;
+        result += `2. 点击右上角「...」→「...更多」\n`;
+        result += `3. 点击「添加文档应用」\n`;
+        result += `4. 搜索并选择你的应用\n`;
+        result += `5. 设置权限为「可查看」\n`;
+        result += `6. 确认后重新点击「获取文档内容」\n\n`;
+        result += `💡 如果搜索不到应用，请先确认：\n`;
+        result += `   - 应用已添加 docs:document.content:read 权限\n`;
+        result += `   - 应用已发布或启用测试版本`;
       } else {
+        result += `错误信息: ${metaData.msg}\n\n`;
         result += `请检查应用配置和权限设置`;
       }
     }
@@ -401,10 +449,19 @@ async function showDebugInfo() {
   if (storage.userToken) {
     const remainingMs = (storage.userToken.expiresAt || 0) - Date.now();
     const remainingMins = Math.floor(remainingMs / 60000);
+    const expiresAt = storage.userToken.expiresAt || 0;
+    const expiresAtDate = expiresAt ? new Date(expiresAt).toLocaleString() : 'N/A';
+    const nowDate = new Date().toLocaleString();
+
     debug += `  状态: ✅ 已设置\n`;
     debug += `  类型: ${storage.userToken.tokenType}\n`;
     debug += `  区域: ${storage.userToken.region}\n`;
-    debug += `  过期: ${remainingMs > 0 ? `${remainingMins}分钟后` : `已过期`}\n`;
+    debug += `  Token 长度: ${storage.userToken.accessToken?.length || 0}\n`;
+    debug += `  过期时间戳: ${expiresAt}\n`;
+    debug += `  过期时间: ${expiresAtDate}\n`;
+    debug += `  当前时间: ${nowDate}\n`;
+    debug += `  剩余毫秒: ${remainingMs}\n`;
+    debug += `  过期: ${remainingMs > 0 ? `${remainingMins}分钟后` : `❌ 已过期`}\n`;
     if (storage.userToken.user) {
       debug += `  用户: ${storage.userToken.user.name}\n`;
     }

@@ -257,20 +257,45 @@
     <details>
       <summary>📖 使用说明</summary>
       <div style="margin-top: 8px; font-size: 12px; line-height: 1.6;">
-        <p><strong>快速开始：</strong></p>
+        <p><strong>⚠️ 重要：文档级权限配置</strong></p>
+        <p style="background: #fffbe6; padding: 8px; border-radius: 4px; margin: 8px 0;">
+          飞书要求<strong>每个文档单独授权</strong>，即使应用有 API 权限也需要添加！
+        </p>
+
+        <p><strong>方法一：为应用添加文档权限（推荐，批量访问）</strong></p>
+        <ol style="padding-left: 20px; margin: 8px 0;">
+          <li>打开需要读取的飞书文档</li>
+          <li>点击右上角 <strong>「...」</strong> → <strong>「...更多」</strong></li>
+          <li>点击 <strong>「添加文档应用」</strong></li>
+          <li>搜索并选择你的应用（按 App 名称搜索）</li>
+          <li>设置权限为 <strong>「可查看」</strong> 或 <strong>「可编辑」</strong></li>
+          <li>点击确认</li>
+        </ol>
+
+        <p><strong>方法二：为用户添加文档权限</strong></p>
+        <ol style="padding-left: 20px; margin: 8px 0;">
+          <li>打开飞书文档</li>
+          <li>点击右上角 <strong>「分享」</strong> 按钮</li>
+          <li>输入要授权的用户邮箱</li>
+          <li>设置权限后点击发送</li>
+        </ol>
+
+        <p style="margin-top: 12px;"><strong>快速开始：</strong></p>
         <ol style="padding-left: 20px;">
           <li>在飞书开放平台创建企业自建应用</li>
           <li>添加权限：<code>docs:document.content:read</code></li>
           <li>启用测试版本并添加自己为测试用户</li>
           <li>配置重定向URL：<code>https://forlark.zeabur.app/callback.html</code></li>
           <li>在上方填写 App ID 和 App Secret，点击保存</li>
-          <li>打开飞书文档，点击"获取文档内容"</li>
+          <li><strong>在每个需要读取的文档中添加应用权限</strong>（见上方方法一）</li>
+          <li>点击"获取文档内容"</li>
         </ol>
-        <p style="margin-top: 8px;"><strong>注意：</strong></p>
+
+        <p style="margin-top: 8px;"><strong>提示：</strong></p>
         <ul style="padding-left: 20px;">
           <li>应用区域必须与文档区域匹配（feishu.cn ↔ open.feishu.cn，larksuite.com ↔ open.larksuite.com）</li>
-          <li>私密文档需要用户授权</li>
           <li>启用测试版本后无需等待审批，立即生效</li>
+          <li>如果需要访问多个文档，需要在每个文档中分别添加应用权限</li>
         </ul>
       </div>
     </details>

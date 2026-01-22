@@ -1,11 +1,14 @@
 // 飞书文档读取器 - Background Service Worker
-// 简化版，使用权限: docs:document.content:read
+// 修复：使用正确的 docs API
 
 // ===== API 配置 =====
 const API_ENDPOINTS = {
   'feishu.cn': 'https://open.feishu.cn',
   'larksuite.com': 'https://open.larksuite.com',
-  'larkoffice.com': 'https://open.larksuite.com'
+  'larkoffice.com': 'https://open.larksuite.com',
+  // 字节跳动飞书专用域名
+  'fsopen.feishu.cn': 'https://fsopen.feishu.cn',
+  'fsopen.larksuite.com': 'https://fsopen.larksuite.com'
 };
 
 // ===== Token 缓存 =====
@@ -213,21 +216,22 @@ async function getTenantAccessToken(appId, appSecret, region) {
   return data.tenant_access_token;
 }
 
-// ===== 获取文档内容 =====
+// ===== 获取文档内容 - 使用正确的 docs API =====
 async function fetchDocumentContent(request) {
   const { documentId, appId, appSecret, domain } = request;
 
   try {
-    // 判断区域
+    // 判断区域和API端点
     let region = 'feishu';
     let apiEndpoint = API_ENDPOINTS['feishu.cn'];
 
+    // 优先使用字节跳动的 fsopen 域名
     if (domain && domain.includes('larksuite.com')) {
       region = 'larksuite';
-      apiEndpoint = API_ENDPOINTS['larksuite.com'];
+      apiEndpoint = API_ENDPOINTS['fsopen.larksuite.com']; // 使用 fsopen
     } else if (domain && domain.includes('larkoffice.com')) {
       region = 'larkoffice';
-      apiEndpoint = API_ENDPOINTS['larkoffice.com'];
+      apiEndpoint = API_ENDPOINTS['fsopen.larksuite.com']; // 使用 fsopen
     }
 
     console.log('[Fetch] 区域:', region, 'API:', apiEndpoint);
@@ -252,50 +256,66 @@ async function fetchDocumentContent(request) {
       console.log('[Fetch] 使用应用令牌');
     }
 
-    // 获取文档元数据
-    const metaUrl = `${apiEndpoint}/open-apis/docx/v1/documents/${documentId}`;
-    console.log('[Fetch] 请求:', metaUrl);
+    // ===== 使用正确的 docs API =====
+    // API: GET /open-apis/docs/v1/content
+    // 参数: content_type, doc_token, doc_type
+    const contentUrl = `${apiEndpoint}/open-apis/docs/v1/content`;
 
-    const metaRes = await fetch(metaUrl, {
+    const params = new URLSearchParams({
+      content_type: 'markdown',
+      doc_token: documentId,  // 使用 doc_token 而不是 document_id
+      doc_type: 'docx'
+    });
+
+    console.log('[Fetch] 请求URL:', contentUrl);
+    console.log('[Fetch] 请求参数:', {
+      content_type: 'markdown',
+      doc_token: documentId.substring(0, 20) + '...',
+      doc_type: 'docx'
+    });
+
+    const response = await fetch(`${contentUrl}?${params}`, {
+      method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
       }
     });
 
-    const metaData = await metaRes.json();
-    console.log('[Fetch] 元数据响应:', metaData);
+    const data = await response.json();
+    console.log('[Fetch] 响应状态:', response.status);
+    console.log('[Fetch] 响应码:', data.code);
 
-    if (metaData.code !== 0) {
-      let errorMsg = `获取文档失败: ${metaData.msg} (code: ${metaData.code})`;
+    if (data.code !== 0) {
+      let errorMsg = `获取文档失败: ${data.msg} (code: ${data.code})`;
 
-      if (metaData.code === 1770032 || metaData.code === 99991663) {
-        errorMsg += '\n\n权限不足，请检查:\n';
-        errorMsg += '1. 应用是否添加权限: docs:document.content:read\n';
-        errorMsg += '2. 是否已发布应用或启用测试版本\n';
-        errorMsg += '3. 应用区域是否与文档区域匹配\n';
-        errorMsg += '4. 私密文档需要用户授权';
+      if (data.code === 1770032 || data.code === 99991663) {
+        errorMsg += '\n\n【权限不足】\n\n';
+        errorMsg += '请确认：\n';
+        errorMsg += '1. 应用已添加权限: docs:document.content:read\n';
+        errorMsg += '2. 在文档中添加应用权限：「...」→「...更多」→「添加文档应用」\n';
+      } else if (data.code === 1770002) {
+        errorMsg += '\n\n【文档不存在】\n\n';
+        errorMsg += '可能原因：\n';
+        errorMsg += '1. 文档已被删除\n';
+        errorMsg += '2. doc_token 不正确\n';
+        errorMsg += '3. 当前 token 无权访问此文档\n';
+        errorMsg += '4. 文档类型不匹配（不是 docx 类型）\n\n';
+        errorMsg += `提取的 doc_token: ${documentId}`;
       }
 
       throw new Error(errorMsg);
     }
 
-    const documentTitle = metaData.data.document.title || '未命名文档';
-
-    // 获取文档块
-    const blocks = await fetchAllBlocks(documentId, token, apiEndpoint);
-    const content = blocksToText(blocks, documentTitle);
-
-    console.log('[Fetch] 获取成功, 文档标题:', documentTitle);
+    // 返回内容
+    console.log('[Fetch] 获取成功，内容长度:', data.data?.content?.length || 0);
 
     return {
       success: true,
-      documentId,
-      title: documentTitle,
-      blocks,
-      content,
-      region,
-      tokenType
+      documentId: documentId,
+      content: data.data?.content || '文档内容为空',
+      region: region,
+      tokenType: tokenType
     };
 
   } catch (error) {
@@ -304,118 +324,4 @@ async function fetchDocumentContent(request) {
   }
 }
 
-// ===== 递归获取所有块 =====
-async function fetchAllBlocks(documentId, token, apiEndpoint, collectedBlocks = [], pageToken = null) {
-  let url = `${apiEndpoint}/open-apis/docx/v1/documents/${documentId}/blocks/${documentId}/children`;
-  if (pageToken) {
-    url += `?page_token=${encodeURIComponent(pageToken)}`;
-  }
-
-  const response = await fetch(url, {
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    }
-  });
-
-  const data = await response.json();
-  if (data.code !== 0) {
-    throw new Error(`获取文档块失败: ${data.msg}`);
-  }
-
-  const items = data.data.items || [];
-  collectedBlocks.push(...items);
-
-  if (data.data.has_more && data.data.page_token) {
-    return await fetchAllBlocks(documentId, token, apiEndpoint, collectedBlocks, data.data.page_token);
-  }
-
-  return collectedBlocks;
-}
-
-// ===== 块转文本 =====
-function blocksToText(blocks, title = '') {
-  let text = title ? `${title}\n\n` : '';
-
-  blocks.forEach(block => {
-    const type = block.block_type || block.type;
-
-    switch (type) {
-      case 'page':
-        if (block.page?.title) text += `${block.page.title}\n\n`;
-        break;
-      case 'text':
-        if (block.text_run?.elements) {
-          text += parseTextElements(block.text_run.elements) + '\n\n';
-        }
-        break;
-      case 'heading1':
-      case 'heading_1':
-        if (block.text_run?.elements) {
-          text += `# ${parseTextElements(block.text_run.elements)}\n\n`;
-        }
-        break;
-      case 'heading2':
-      case 'heading_2':
-        if (block.text_run?.elements) {
-          text += `## ${parseTextElements(block.text_run.elements)}\n\n`;
-        }
-        break;
-      case 'heading3':
-      case 'heading_3':
-        if (block.text_run?.elements) {
-          text += `### ${parseTextElements(block.text_run.elements)}\n\n`;
-        }
-        break;
-      case 'bullet':
-      case 'bullet_list':
-        if (block.text_run?.elements) {
-          text += `• ${parseTextElements(block.text_run.elements)}\n`;
-        }
-        break;
-      case 'ordered':
-      case 'ordered_list':
-        if (block.text_run?.elements) {
-          text += `1. ${parseTextElements(block.text_run.elements)}\n`;
-        }
-        break;
-      case 'quote':
-        if (block.text_run?.elements) {
-          text += `> ${parseTextElements(block.text_run.elements)}\n\n`;
-        }
-        break;
-      case 'code':
-        if (block.text_run?.elements) {
-          text += `\`\`\`\n${parseTextElements(block.text_run.elements)}\n\`\`\`\n\n`;
-        }
-        break;
-      case 'todo':
-        if (block.text_run?.elements) {
-          const checked = block.todo?.done ? 'x' : ' ';
-          text += `- [${checked}] ${parseTextElements(block.text_run.elements)}\n`;
-        }
-        break;
-      case 'divider':
-        text += '---\n\n';
-        break;
-    }
-  });
-
-  return text.trim();
-}
-
-// ===== 解析文本元素 =====
-function parseTextElements(elements) {
-  if (!elements || elements.length === 0) return '';
-
-  return elements.map(element => {
-    if (element.text_run?.content) return element.text_run.content;
-    if (element.text) return element.text;
-    if (element.mention) return `@${element.mention.name || element.mention.id}`;
-    if (element.equation?.content) return element.equation.content;
-    if (typeof element === 'string') return element;
-    return '';
-  }).join('');
-}
-
-console.log('[Background] 飞书文档读取器已加载');
+console.log('[Background] 飞书文档读取器已加载 - 使用 docs API');
