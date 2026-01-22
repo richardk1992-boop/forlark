@@ -196,18 +196,59 @@ async function fetchDocumentContent() {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
-    // 提取文档 ID
+    // 检查是否在飞书页面
+    const isFeishuPage = tab.url.includes('feishu.cn') ||
+                         tab.url.includes('larksuite.com') ||
+                         tab.url.includes('larkoffice.com');
+
+    if (!isFeishuPage) {
+      throw new Error(`当前不在飞书页面\n\n当前URL: ${tab.url}\n\n请打开飞书文档后重试`);
+    }
+
+    // 提取文档 ID - 支持多种格式
     const results = await chrome.scripting.executeScript({
       target: { tabId: tab.id },
       func: () => {
-        const match = window.location.pathname.match(/\/docx\/([a-zA-Z0-9_-]+)/);
-        return match ? match[1] : null;
+        const url = window.location.href;
+        const path = window.location.pathname;
+
+        // 方法1: 从 URL 路径提取
+        // 支持: /docx/xxxxx, /docs/xxxxx, /wiki/xxxxx, /note/xxxxx
+        const pathMatch = path.match(/\/(docx|docs|wiki|note|slides|sheets|bitable)\/([a-zA-Z0-9_-]+)/);
+        if (pathMatch) return pathMatch[2];
+
+        // 方法2: 从 window 对象
+        if (window.__doc_id__) return window.__doc_id__;
+
+        // 方法3: 从 data 属性
+        const docElement = document.querySelector('[data-doc-id]');
+        if (docElement) return docElement.getAttribute('data-doc-id');
+
+        // 方法4: 从 meta 标签
+        const metaTag = document.querySelector('meta[name="doc-id"]');
+        if (metaTag) return metaTag.getAttribute('content');
+
+        return null;
       }
     });
 
     const documentId = results[0]?.result;
     if (!documentId) {
-      throw new Error('无法获取文档 ID，请确保在飞书文档页面');
+      // 显示当前URL信息帮助调试
+      const urlObj = new URL(tab.url);
+      let errorMsg = `无法获取文档 ID\n\n`;
+      errorMsg += `当前页面: ${tab.url}\n`;
+      errorMsg += `路径: ${urlObj.pathname}\n\n`;
+      errorMsg += `支持的页面类型:\n`;
+      errorMsg += `• /docx/xxxxx - 文档\n`;
+      errorMsg += `• /docs/xxxxx - 文档\n`;
+      errorMsg += `• /wiki/xxxxx - 知识库\n`;
+      errorMsg += `• /note/xxxxx - 笔记\n`;
+      errorMsg += `• /slides/xxxxx - 演示文稿\n`;
+      errorMsg += `• /sheets/xxxxx - 表格\n`;
+      errorMsg += `• /bitable/xxxxx - 多维表格\n\n`;
+      errorMsg += `请打开正确的飞书文档页面后重试`;
+      throw new Error(errorMsg);
     }
 
     // 获取配置
@@ -262,14 +303,19 @@ async function testApi() {
   const results = await chrome.scripting.executeScript({
     target: { tabId: tab.id },
     func: () => {
-      const match = window.location.pathname.match(/\/docx\/([a-zA-Z0-9_-]+)/);
-      return match ? match[1] : null;
+      const path = window.location.pathname;
+      const pathMatch = path.match(/\/(docx|docs|wiki|note|slides|sheets|bitable)\/([a-zA-Z0-9_-]+)/);
+      if (pathMatch) return pathMatch[2];
+      if (window.__doc_id__) return window.__doc_id__;
+      const docElement = document.querySelector('[data-doc-id]');
+      if (docElement) return docElement.getAttribute('data-doc-id');
+      return null;
     }
   });
 
   const documentId = results[0]?.result;
   if (!documentId) {
-    showError('无法获取文档 ID');
+    showError(`无法获取文档 ID\n\n当前页面: ${tab.url}\n\n请确保在飞书文档页面`);
     return;
   }
 

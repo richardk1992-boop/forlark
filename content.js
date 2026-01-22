@@ -5,9 +5,9 @@ console.log('[Content] 飞书文档读取器已加载');
 
 // 从页面获取文档 ID
 function getDocumentId() {
-  // 从 URL 获取
-  const urlMatch = window.location.pathname.match(/\/docx\/([a-zA-Z0-9_-]+)/);
-  if (urlMatch) return urlMatch[1];
+  // 从 URL 获取 - 支持多种格式
+  const pathMatch = window.location.pathname.match(/\/(docx|docs|wiki|note|slides|sheets|bitable)\/([a-zA-Z0-9_-]+)/);
+  if (pathMatch) return pathMatch[2];
 
   // 从其他方式获取
   if (window.__doc_id__) return window.__doc_id__;
