@@ -1,13 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "飞书文档内容读取器",
-  "version": "1.1.0",
-  "description": "读取飞书文档内容并提供复制功能，支持用户授权访问私密文档",
+  "name": "飞书文档读取器",
+  "version": "2.0.0",
+  "description": "简化版飞书文档内容读取器，使用权限: docs:document.content:read",
   "permissions": [
     "activeTab",
     "storage",
     "scripting",
-    "webNavigation",
     "tabs"
   ],
   "host_permissions": [
