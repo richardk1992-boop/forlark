@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>飞书文档内容读取器</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>飞书文档内容读取器</h1>
+    </header>
+
+    <div class="config-section">
+      <div class="input-group">
+        <label for="appId">应用 ID (App ID):</label>
+        <input type="text" id="appId" placeholder="cli_aXXXXXXXX" />
+      </div>
+      <div class="input-group">
+        <label for="appSecret">应用密钥 (App Secret):</label>
+        <input type="password" id="appSecret" placeholder="请输入应用密钥" />
+      </div>
+      <button id="saveConfig" class="btn btn-primary">保存配置</button>
+      <button id="testConnection" class="btn btn-small" style="margin-left: 10px;">测试连接</button>
+      <span id="saveStatus" class="status"></span>
+    </div>
+
+    <div class="auth-section" id="authSection">
+      <h3>用户授权</h3>
+      <div id="authStatus" class="auth-status">
+        <span class="auth-indicator" id="authIndicator"></span>
+        <span id="authStatusText">未授权</span>
+      </div>
+      <div id="userInfo" class="user-info" style="display: none;">
+        <div class="user-avatar">
+          <img id="userAvatar" src="" alt="用户头像" />
+        </div>
+        <div class="user-details">
+          <div class="user-name" id="userName"></div>
+          <div class="user-email" id="userEmail"></div>
+        </div>
+      </div>
+      <div class="auth-buttons">
+        <button id="authorizeBtn" class="btn btn-primary">用户登录授权</button>
+        <button id="checkPermissionsBtn" class="btn btn-small">检查权限</button>
+        <button id="logoutBtn" class="btn btn-small" style="display: none;">退出登录</button>
+      </div>
+      <p class="auth-hint">
+        💡 授权后可访问你有权限的私密文档
+      </p>
+    </div>
+
+    <div class="action-section">
+      <button id="fetchContent" class="btn btn-success">
+        获取文档内容
+      </button>
+      <button id="debugInfo" class="btn btn-small" style="margin-left: 10px;">
+        调试信息
+      </button>
+      <span id="loading" class="loading" style="display: none;">获取中...</span>
+    </div>
+
+    <div class="debug-section" id="debugSection" style="display: none;">
+      <h3>调试信息</h3>
+      <div id="debugContent" class="debug-content"></div>
+    </div>
+
+    <div class="content-section" id="contentSection" style="display: none;">
+      <div class="content-header">
+        <h2>文档内容</h2>
+        <div class="action-buttons">
+          <button id="copyContent" class="btn btn-small">复制内容</button>
+          <button id="copyMarkdown" class="btn btn-small">复制 Markdown</button>
+          <button id="downloadFile" class="btn btn-small">下载文件</button>
+        </div>
+      </div>
+      <div class="format-selector">
+        <label>输出格式:</label>
+        <select id="outputFormat">
+          <option value="markdown">Markdown</option>
+          <option value="text">纯文本</option>
+          <option value="html">HTML</option>
+        </select>
+      </div>
+      <div class="content-display">
+        <pre id="contentDisplay"></pre>
+      </div>
+    </div>
+
+    <div class="error-section" id="errorSection" style="display: none;">
+      <div class="error-message"></div>
+    </div>
+
+    <div class="info-section">
+      <details>
+        <summary>使用说明</summary>
+        <ol>
+          <li>在飞书开放平台创建<strong>企业自建应用</strong>并获取 App ID 和 App Secret</li>
+          <li>为应用添加"查看云文档内容"权限 (docx:document:readonly)</li>
+          <li><strong>部署OAuth回调页面：</strong>
+            <ul style="margin: 8px 0; padding-left: 24px;">
+              <li>在项目目录找到 <code>callback.html</code> 文件</li>
+              <li>创建一个GitHub仓库并上传 <code>callback.html</code></li>
+              <li>在GitHub仓库设置中启用 GitHub Pages</li>
+              <li>你的回调URL将是: <code>https://你的用户名.github.io/仓库名/callback.html</code>
+              <li>将此URL添加到飞书开放平台的重定向URL列表中</li>
+            </ul>
+          </li>
+          <li>在 <code>background.js</code> 中找到 <code>callbackUrl</code> 变量，替换为你的实际 GitHub Pages URL</li>
+          <li>重新加载插件以应用更改</li>
+          <li><strong>发布应用或开启测试版本</strong>（重要：权限需要审批通过）</li>
+          <li>在上方输入框中填入 App ID 和 App Secret 并保存</li>
+          <li>点击<strong>"用户登录授权"</strong>按钮，完成飞书账号授权</li>
+          <li>打开任意飞书文档，点击"获取文档内容"按钮</li>
+          <li>内容获取后可以复制或下载</li>
+        </ol>
+        <div style="margin-top: 12px; padding: 10px; background: #fff3cd; border-radius: 4px; font-size: 12px;">
+          <strong>⚠️ 重要提示：</strong>
+          <ul style="margin: 8px 0 0 0; padding-left: 20px;">
+            <li>应用类型必须是"企业自建应用"</li>
+            <li>权限审批需要企业管理员批准</li>
+            <li><strong>用户授权可访问私密文档</strong>，应用身份只能访问公开文档</li>
+            <li><strong>区域必须匹配：</strong>
+              <ul style="margin: 4px 0 0 0; padding-left: 20px;">
+                <li>中国版文档(feishu.cn) → 应用在 open.feishu.cn 创建</li>
+                <li>国际/新加坡版文档(larksuite.com/larkoffice.com) → 应用在 open.larksuite.com 创建</li>
+              </ul>
+            </li>
+          </ul>
+        </div>
+      </details>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

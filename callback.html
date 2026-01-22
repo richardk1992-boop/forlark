@@ -75,26 +75,61 @@
       document.getElementById('content').innerHTML = `
         <p class="info">授权码已获取！</p>
         <div class="code">${code}</div>
-        <p class="info">页面将在3秒后自动关闭</p>
+        <p class="info">正在传递授权码到插件...</p>
       `;
 
-      // 发送授权码到插件
-      if (window.opener && window.opener !== window) {
+      // 使用 chrome.storage.local 传递授权码给 extension
+      // 这是最可靠的方式，因为 callback.html 和 extension 都可以访问 storage
+      const oauthData = {
+        code: code,
+        state: state,
+        timestamp: Date.now()
+      };
+
+      // 尝试使用 chrome.storage.local (如果是在 extension context 中)
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+        chrome.storage.local.set({ larkOAuthCode: oauthData }, () => {
+          console.log('授权码已存储到 chrome.storage.local');
+          document.getElementById('content').innerHTML = `
+            <p class="info">授权码已获取！</p>
+            <div class="code">${code}</div>
+            <p class="info">授权码已传递给插件</p>
+            <p class="info">页面将在2秒后自动关闭</p>
+          `;
+          setTimeout(() => { window.close(); }, 2000);
+        });
+      } else {
+        // 如果不在 extension context (Zeabur部署)，使用 localStorage 作为备选
+        // 并通过 window.opener.postMessage 尝试通知
         try {
-          window.opener.postMessage({
-            type: 'LARK_OAUTH_CODE',
-            code: code,
-            state: state
-          }, '*');
+          localStorage.setItem('lark_oauth_code', JSON.stringify(oauthData));
+
+          // 同时尝试 postMessage (可能有效)
+          if (window.opener && window.opener !== window) {
+            window.opener.postMessage({
+              type: 'LARK_OAUTH_CODE',
+              code: code,
+              state: state
+            }, '*');
+          }
+
+          document.getElementById('content').innerHTML = `
+            <p class="info">授权码已获取！</p>
+            <div class="code">${code}</div>
+            <p class="info">请在插件中确认授权状态</p>
+            <p class="info">页面将在2秒后自动关闭</p>
+          `;
+          setTimeout(() => { window.close(); }, 2000);
         } catch (e) {
-          console.error('发送消息失败:', e);
+          console.error('存储授权码失败:', e);
+          document.getElementById('content').innerHTML = `
+            <p class="info">授权码已获取！</p>
+            <div class="code">${code}</div>
+            <p class="info" style="color: #ff4d4f;">无法自动传递授权码</p>
+            <p class="info">请截图此页面并联系开发者</p>
+          `;
         }
       }
-
-      // 自动关闭窗口
-      setTimeout(() => {
-        window.close();
-      }, 3000);
     } else {
       document.getElementById('content').innerHTML = `
         <p class="info">未收到授权码，请重试授权流程。</p>
