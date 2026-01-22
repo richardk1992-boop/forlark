@@ -46,6 +46,31 @@
         <button id="checkPermissionsBtn" class="btn btn-small">检查权限</button>
         <button id="logoutBtn" class="btn btn-small" style="display: none;">退出登录</button>
       </div>
+
+      <!-- 手动输入 Token -->
+      <details style="margin-top: 15px;">
+        <summary style="cursor: pointer; user-select: none; padding: 8px; background: #f5f5f5; border-radius: 4px;">
+          🔧 手动输入 Access Token
+        </summary>
+        <div style="margin-top: 10px; padding: 10px; background: #f9f9f9; border-radius: 4px;">
+          <div class="input-group">
+            <label for="manualAccessToken">Access Token:</label>
+            <input type="password" id="manualAccessToken" placeholder="粘贴 user_access_token" style="width: 100%;" />
+          </div>
+          <div class="input-group" style="margin-top: 8px;">
+            <label for="manualTokenRegion">区域:</label>
+            <select id="manualTokenRegion">
+              <option value="feishu">中国版 (feishu.cn)</option>
+              <option value="larksuite" selected>国际/新加坡版 (larksuite.com)</option>
+            </select>
+          </div>
+          <button id="setManualToken" class="btn btn-small" style="margin-top: 10px;">设置 Token</button>
+          <p class="auth-hint" style="margin-top: 8px; font-size: 12px;">
+            💡 从飞书开放平台调试工具或浏览器开发者工具中获取 token
+          </p>
+        </div>
+      </details>
+
       <p class="auth-hint">
         💡 授权后可访问你有权限的私密文档
       </p>

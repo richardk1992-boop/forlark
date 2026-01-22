@@ -62,6 +62,9 @@ function setupEventListeners() {
 
   // 下载文件按钮
   document.getElementById('downloadFile').addEventListener('click', downloadFile);
+
+  // 手动设置 Token 按钮
+  document.getElementById('setManualToken').addEventListener('click', setManualToken);
 }
 
 // 保存配置
@@ -328,6 +331,71 @@ async function logout() {
   } catch (error) {
     console.error('退出登录失败:', error);
     showError('退出登录失败: ' + error.message);
+  }
+}
+
+// 手动设置 Access Token
+async function setManualToken() {
+  const tokenInput = document.getElementById('manualAccessToken');
+  const regionSelect = document.getElementById('manualTokenRegion');
+
+  const accessToken = tokenInput.value.trim();
+  const region = regionSelect.value;
+
+  if (!accessToken) {
+    showError('请输入 Access Token');
+    return;
+  }
+
+  console.log('手动设置 token:', { region, tokenLength: accessToken.length });
+
+  try {
+    // 验证 token 是否有效 - 获取用户信息
+    const apiEndpoint = region === 'feishu' ? 'https://open.feishu.cn' : 'https://open.larksuite.com';
+
+    const userInfoResponse = await fetch(`${apiEndpoint}/open-apis/authen/v1/user_info`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      }
+    });
+
+    const userInfoData = await userInfoResponse.json();
+    console.log('Token 验证响应:', userInfoData);
+
+    if (userInfoData.code !== 0) {
+      showError(`Token 无效: ${userInfoData.msg}`);
+      return;
+    }
+
+    // Token 有效，存储用户信息
+    const tokenInfo = {
+      accessToken: accessToken,
+      refreshToken: null,
+      expiresAt: Date.now() + 7200 * 1000, // 默认2小时
+      region: region,
+      tokenType: 'user',
+      user: userInfoData.data ? {
+        name: userInfoData.data.name,
+        email: userInfoData.data.email,
+        avatar: userInfoData.data.avatar_url,
+        userId: userInfoData.data.user_id
+      } : null
+    };
+
+    await chrome.storage.local.set({ userToken: tokenInfo });
+
+    // 清空输入框
+    tokenInput.value = '';
+
+    // 刷新授权状态显示
+    checkAuthStatus();
+
+    showStatus('Token 设置成功！', 'success');
+
+    console.log('手动 token 设置成功');
+  } catch (error) {
+    console.error('设置 token 失败:', error);
+    showError('设置 Token 失败: ' + error.message);
   }
 }
 
